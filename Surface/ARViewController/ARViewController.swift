@@ -12,38 +12,73 @@ import RealityKit
 final class ARViewController: UIViewController {
     
     private lazy var arView = ARView().do {
+        $0.environment.sceneUnderstanding.options.insert([.occlusion])
+        $0.renderOptions.insert(.disableMotionBlur)
         $0.frame = view.bounds
     }
-    
-    private var entity: ModelEntity!
-    private var anchorEntity = AnchorEntity(plane: .horizontal)
     
     override func viewDidLoad() {
         super.viewDidLoad()
         MetalLibLoader.initializeMetal()
+        configureWorldTracking()
         setupSubview()
+    }
+    
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
         obtainSphereEntity()
+    }
+    
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        UIApplication.shared.isIdleTimerDisabled = true
+    }
+    
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        arView.session.pause()
     }
     
     private func setupSubview() {
         view.addSubview(arView)
     }
     
+    private func configureWorldTracking() {
+        let configuration = ARWorldTrackingConfiguration()
+        
+        let personSegmentation: ARWorldTrackingConfiguration.FrameSemantics = .personSegmentationWithDepth
+        if ARWorldTrackingConfiguration.supportsFrameSemantics(personSegmentation) {
+            configuration.frameSemantics.insert(personSegmentation)
+        }
+        
+        let sceneReconstruction: ARWorldTrackingConfiguration.SceneReconstruction = .mesh
+        if ARWorldTrackingConfiguration.supportsSceneReconstruction(sceneReconstruction) {
+            configuration.sceneReconstruction.insert(sceneReconstruction)
+        }
+        
+        configuration.planeDetection.insert(.horizontal)
+        arView.session.run(configuration)
+    }
+    
     private func obtainSphereEntity() {
+        let anchorEntity = AnchorEntity(plane: .horizontal)
+        
+        let customMaterial: CustomMaterial
         let surfaceShader = CustomMaterial.SurfaceShader(named: "rainbow", in: MetalLibLoader.library)
-        let material = PhysicallyBasedMaterial()
         
-        entity = ModelEntity(mesh: .generateSphere(radius: 0.4),
-                             materials: [material])
+        do {
+            try customMaterial = CustomMaterial(surfaceShader: surfaceShader, lightingModel: .lit)
+        } catch {
+            fatalError(error.localizedDescription)
+        }
         
-        entity.model?.materials = entity.model?.materials.compactMap {
-            try? CustomMaterial(from: $0, surfaceShader: surfaceShader)
-        } ?? [Material]()
+        let entity = ModelEntity(mesh: .generateSphere(radius: 0.6),
+                             materials: [customMaterial])
         
         entity.generateCollisionShapes(recursive: true)
         entity.setParent(anchorEntity)
         
-        entity.position.y = 0.4
+        entity.position.y = 0.6
         
         arView.installGestures(.all, for: entity)
         arView.scene.anchors.append(anchorEntity)
